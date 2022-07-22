@@ -1,0 +1,174 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { HomeResponseDto } from './dtos/home.dto';
+import { JWTPayload } from '../user/types';
+import { CreateHomeParams, GetHomeParams, UpdateHomeParams } from './types';
+
+@Injectable()
+export class HomeService {
+  constructor(private readonly prismaService: PrismaService) {}
+
+  async getHomes(filters: GetHomeParams): Promise<HomeResponseDto[]> {
+    const homes = await this.prismaService.home.findMany({
+      select: {
+        id: true,
+        address: true,
+        city: true,
+        price: true,
+        property_type: true,
+        number_of_bathrooms: true,
+        number_of_bedrooms: true,
+        images: {
+          select: {
+            url: true,
+          },
+          take: 1,
+        },
+      },
+      where: filters,
+    });
+
+    if (!homes.length) {
+      throw new NotFoundException('No homes found');
+    }
+
+    return homes.map((home) => {
+      const fetchHome = {
+        ...home,
+        image: home.images[0] ? home.images[0].url : null,
+      };
+      delete fetchHome.images;
+      return new HomeResponseDto(fetchHome);
+    });
+  }
+
+  async getHomeById(id: number): Promise<HomeResponseDto> {
+    const home = await this.prismaService.home.findUnique({
+      where: { id },
+    });
+
+    if (!home) {
+      throw new NotFoundException('No home found');
+    }
+
+    return new HomeResponseDto(home);
+  }
+
+  async createHome(
+    {
+      address,
+      city,
+      numberOfBathrooms,
+      numberOfBedrooms,
+      price,
+      landSize,
+      propertyType,
+      images,
+    }: CreateHomeParams,
+    userId: JWTPayload['id'],
+  ): Promise<HomeResponseDto> {
+    const home = await this.prismaService.home.create({
+      data: {
+        address,
+        city,
+        number_of_bathrooms: numberOfBathrooms,
+        number_of_bedrooms: numberOfBedrooms,
+        price,
+        land_size: landSize,
+        property_type: propertyType,
+        realtor_id: userId,
+      },
+    });
+
+    await this.prismaService.image.createMany({
+      data: images.map((image) => ({ ...image, home_id: home.id })),
+    });
+
+    return new HomeResponseDto(home);
+  }
+
+  async updateHomeById(id: number, data: UpdateHomeParams) {
+    const home = await this.prismaService.home.findUnique({
+      where: { id },
+    });
+
+    if (!home) {
+      throw new NotFoundException('No home found');
+    }
+
+    const updatedHome = await this.prismaService.home.update({
+      where: { id },
+      data,
+    });
+
+    return new HomeResponseDto(updatedHome);
+  }
+
+  async deleteHomeById(id: number) {
+    const home = await this.prismaService.home.findUnique({
+      where: { id },
+    });
+
+    if (!home) {
+      throw new NotFoundException('No home found');
+    }
+
+    await this.prismaService.image.deleteMany({
+      where: { home_id: id },
+    });
+
+    await this.prismaService.home.delete({
+      where: { id },
+    });
+  }
+
+  async getRealtorByHomeId(id: number) {
+    const home = await this.prismaService.home.findUnique({
+      where: { id },
+      select: {
+        realtor: {
+          select: {
+            name: true,
+            id: true,
+            email: true,
+            phone: true,
+          },
+        },
+      },
+    });
+
+    if (!home) {
+      throw new NotFoundException('No home found');
+    }
+
+    return home.realtor;
+  }
+
+  async inquire(buyer: JWTPayload, homeId, message) {
+    const realtor = await this.getRealtorByHomeId(homeId);
+
+    return this.prismaService.message.create({
+      data: {
+        realtor_id: realtor.id,
+        buyer_id: buyer.id,
+        home_id: homeId,
+        message,
+      },
+    });
+  }
+
+  getHomeMessages(homeId: number) {
+    return this.prismaService.message.findMany({
+      where: { home_id: homeId },
+      select: {
+        message: true,
+        buyer: {
+          select: {
+            name: true,
+            user_type: true,
+          },
+        },
+      },
+    });
+  }
+}
