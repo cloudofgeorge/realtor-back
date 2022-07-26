@@ -26,6 +26,7 @@
     "@nestjs/common": "^8.0.0",
     "@nestjs/core": "^8.0.0",
     "@nestjs/platform-express": "^8.0.0",
+    "@nestjs/swagger": "^6.0.4",
     "@prisma/client": "^4.0.0",
     "@types/bcryptjs": "^2.4.2",
     "@types/jsonwebtoken": "^8.5.8",
